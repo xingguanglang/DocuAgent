@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+import json
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.dependencies import get_current_user
-from app.models.schemas import ChatRequest, ChatHistoryResponse
+from app.models.schemas import ChatRequest
 
 router = APIRouter()
 
@@ -31,27 +32,26 @@ async def chat(
         SSE stream of agent reasoning and response chunks.
     """
 
-    async def event_generator():  # type: ignore[no-untyped-def]
-        # TODO: Implement agent-powered chat with SSE streaming
-        yield {"event": "message", "data": "Not implemented yet"}
+    async def event_generator() -> Any:
+        """Generate SSE events for the chat response."""
+        yield {"event": "thought", "data": "Analyzing your question..."}
+
+        yield {"event": "action", "data": json.dumps({"tool": "rag_search", "query": request.message})}
+
+        yield {
+            "event": "message",
+            "data": (
+                f"Thanks for your question: \"{request.message}\"\n\n"
+                "I'm the DocuAgent assistant. The full RAG + Agent pipeline is coming soon. "
+                "Once implemented, I'll be able to:\n"
+                "- Search your uploaded documents for relevant information\n"
+                "- Execute code to analyze data\n"
+                "- Query databases for structured information\n"
+                "- Search the web for additional context\n\n"
+                "For now, try uploading a document and checking the /health endpoint!"
+            ),
+        }
+
         yield {"event": "done", "data": ""}
 
     return EventSourceResponse(event_generator())
-
-
-@router.get("/history", response_model=ChatHistoryResponse)
-async def get_chat_history(
-    user: Annotated[dict[str, str], Depends(get_current_user)],
-    conversation_id: str | None = None,
-) -> ChatHistoryResponse:
-    """Retrieve chat history for the current user.
-
-    Args:
-        user: Authenticated user from JWT token.
-        conversation_id: Optional conversation ID to filter by.
-
-    Returns:
-        List of chat messages.
-    """
-    # TODO: Implement chat history retrieval
-    raise NotImplementedError

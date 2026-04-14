@@ -4,14 +4,28 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from functools import lru_cache
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncAttrs,
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from app.config import settings
 
-engine = create_async_engine(settings.database_url, echo=settings.debug)
+
+@lru_cache(maxsize=1)
+def _get_engine() -> AsyncEngine:
+    """Create a cached async engine instance."""
+    return create_async_engine(settings.database_url, echo=settings.debug)
+
+
+engine = _get_engine()
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -15,9 +16,16 @@ from app.config import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown events."""
-    # Startup
+    from app.models.database import Base, engine
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    os.makedirs(settings.upload_dir, exist_ok=True)
+
     yield
-    # Shutdown
+
+    await engine.dispose()
 
 
 app = FastAPI(
