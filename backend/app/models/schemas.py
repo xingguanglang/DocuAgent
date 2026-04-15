@@ -6,6 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
+
 # --- Auth ---
 
 
@@ -22,7 +23,7 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
-
+    
 
 class LoginResponse(BaseModel):
     """Login response with JWT token."""
