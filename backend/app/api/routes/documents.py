@@ -16,6 +16,7 @@ from app.models.database import Document, async_session
 from app.models.schemas import DocumentListResponse, DocumentResponse
 from app.rag.chunker import chunk_documents
 from app.rag.loader import load_document
+from app.services.vector_store import VectorStoreService
 
 router = APIRouter()
 
@@ -67,6 +68,14 @@ async def upload_document(
         docs = await load_document(file_path)
         chunks = chunk_documents(docs)
         chunk_count = len(chunks)
+
+        for chunk in chunks:
+            chunk.metadata["document_id"] = doc_id
+            chunk.metadata["filename"] = filename
+
+        vector_store = VectorStoreService()
+        await vector_store.add_documents(chunks)
+
         doc_status = "ready"
     except Exception:
         chunk_count = 0

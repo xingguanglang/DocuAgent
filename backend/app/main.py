@@ -33,6 +33,7 @@ app = FastAPI(
     version="0.1.0",
     description="AI-powered document assistant with RAG and Agent capabilities",
     lifespan=lifespan,
+    swagger_ui_parameters={"tryItOutEnabled": False},
 )
 
 app.add_middleware(
