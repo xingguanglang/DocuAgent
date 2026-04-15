@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import chromadb
@@ -47,8 +48,22 @@ class VectorStoreService:
         Returns:
             List of document IDs assigned by ChromaDB.
         """
-        # TODO: Implement batch embedding and storage
-        raise NotImplementedError
+        collection = self.get_or_create_collection(collection_name)
+
+        texts = [doc.page_content for doc in documents]
+        metadatas = [doc.metadata for doc in documents]
+        ids = [str(uuid.uuid4()) for _ in documents]
+
+        embeddings = self._embedding_model.embed_documents(texts)
+
+        collection.add(
+            ids=ids,
+            embeddings=embeddings,
+            documents=texts,
+            metadatas=metadatas,
+        )
+
+        return ids
 
     async def similarity_search(
         self,
@@ -66,5 +81,21 @@ class VectorStoreService:
         Returns:
             List of relevant documents with scores.
         """
-        # TODO: Implement similarity search
-        raise NotImplementedError
+        collection = self.get_or_create_collection(collection_name)
+
+        query_embedding = self._embedding_model.embed_query(query)
+
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        documents = []
+        for text, metadata in zip(
+            results["documents"][0],
+            results["metadatas"][0],
+        ):
+            documents.append(Document(page_content=text, metadata=metadata))
+
+        return documents
