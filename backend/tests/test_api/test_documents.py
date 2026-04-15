@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from httpx import AsyncClient
 
@@ -26,16 +28,26 @@ async def test_list_documents_requires_auth(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_upload_txt_document(auth_client: AsyncClient) -> None:
     """Uploading a .txt file succeeds and returns document metadata."""
-    response = await auth_client.post(
-        "/api/v1/documents/upload",
-        files={"file": ("test.txt", b"Hello, this is a test document.", "text/plain")},
-    )
+    mock_add = AsyncMock(return_value=["fake-id-1"])
+
+    with patch(
+        "app.api.routes.documents.VectorStoreService"
+    ) as mock_vs_cls:
+        mock_vs_cls.return_value.add_documents = mock_add
+        response = await auth_client.post(
+            "/api/v1/documents/upload",
+            files={
+                "file": ("test.txt", b"Hello, this is a test document.", "text/plain")
+            },
+        )
+
     assert response.status_code == 200
     data = response.json()
     assert data["filename"] == "test.txt"
     assert data["file_type"] == "txt"
     assert data["status"] == "ready"
     assert data["chunk_count"] >= 1
+    mock_add.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 
 # Set test env vars BEFORE any app imports
@@ -11,12 +10,11 @@ os.environ["JWT_SECRET_KEY"] = "test-secret-key"
 os.environ["DEBUG"] = "false"
 os.environ["UPLOAD_DIR"] = os.path.join(os.path.dirname(__file__), ".tmp_uploads")
 
-import pytest  # noqa: E402
-import pytest_asyncio  # noqa: E402
-from httpx import ASGITransport, AsyncClient  # noqa: E402
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 
-from app.main import app  # noqa: E402
-from app.models.database import Base, engine  # noqa: E402
+from app.main import app
+from app.models.database import Base, engine
 
 
 @pytest_asyncio.fixture(autouse=True)

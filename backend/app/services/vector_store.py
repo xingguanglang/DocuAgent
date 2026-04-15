@@ -95,6 +95,7 @@ class VectorStoreService:
         for text, metadata in zip(
             results["documents"][0],
             results["metadatas"][0],
+            strict=True,
         ):
             documents.append(Document(page_content=text, metadata=metadata))
 

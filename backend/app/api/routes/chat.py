@@ -2,16 +2,40 @@
 
 from __future__ import annotations
 
-import json
+import logging
+import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sse_starlette.sse import EventSourceResponse
 
+from app.agent.engine import AgentEngine
+from app.agent.memory import ConversationMemory
 from app.api.dependencies import get_current_user
+from app.models.database import Conversation, Message, async_session
 from app.models.schemas import ChatRequest
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# In-memory conversation memories (per conversation_id)
+_memories: dict[str, ConversationMemory] = {}
+
+
+def _get_memory(conversation_id: str) -> ConversationMemory:
+    """Get or create a ConversationMemory for a conversation.
+
+    Args:
+        conversation_id: The conversation identifier.
+
+    Returns:
+        ConversationMemory instance.
+    """
+    if conversation_id not in _memories:
+        _memories[conversation_id] = ConversationMemory()
+    return _memories[conversation_id]
 
 
 @router.post("/")
@@ -31,27 +55,123 @@ async def chat(
     Returns:
         SSE stream of agent reasoning and response chunks.
     """
+    conversation_id = request.conversation_id or str(uuid.uuid4())
+    user_id = user["user_id"]
+
+    # Load conversation memory
+    memory = _get_memory(conversation_id)
+    memory.add_message("user", request.message)
 
     async def event_generator() -> Any:
-        """Generate SSE events for the chat response."""
-        yield {"event": "thought", "data": "Analyzing your question..."}
-
-        yield {"event": "action", "data": json.dumps({"tool": "rag_search", "query": request.message})}
-
+        """Generate SSE events from the agent's ReAct loop."""
+        # Send conversation ID first so frontend can track it
         yield {
-            "event": "message",
-            "data": (
-                f"Thanks for your question: \"{request.message}\"\n\n"
-                "I'm the DocuAgent assistant. The full RAG + Agent pipeline is coming soon. "
-                "Once implemented, I'll be able to:\n"
-                "- Search your uploaded documents for relevant information\n"
-                "- Execute code to analyze data\n"
-                "- Query databases for structured information\n"
-                "- Search the web for additional context\n\n"
-                "For now, try uploading a document and checking the /health endpoint!"
-            ),
+            "event": "conversation_id",
+            "data": conversation_id,
         }
+
+        full_answer = ""
+
+        try:
+            engine = AgentEngine()
+
+            async for event in engine.run(
+                query=request.message,
+                conversation_history=memory.get_messages()[:-1],  # exclude current
+            ):
+                event_type = event["type"]
+                content = event["content"]
+
+                if event_type == "thought":
+                    yield {"event": "thought", "data": content}
+
+                elif event_type == "action":
+                    yield {"event": "action", "data": content}
+
+                elif event_type == "observation":
+                    yield {"event": "observation", "data": content}
+
+                elif event_type == "answer":
+                    full_answer = content
+                    yield {"event": "message", "data": content}
+
+        except Exception:
+            logger.exception("Agent error for conversation %s", conversation_id)
+            full_answer = (
+                "Sorry, I encountered an error while processing your request. "
+                "Please try again."
+            )
+            yield {"event": "message", "data": full_answer}
+
+        # Save assistant response to memory
+        if full_answer:
+            memory.add_message("assistant", full_answer)
+
+        # Persist messages to database
+        try:
+            await _persist_messages(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                user_message=request.message,
+                assistant_message=full_answer,
+            )
+        except Exception:
+            logger.exception("Failed to persist messages for %s", conversation_id)
 
         yield {"event": "done", "data": ""}
 
     return EventSourceResponse(event_generator())
+
+
+async def _persist_messages(
+    conversation_id: str,
+    user_id: str,
+    user_message: str,
+    assistant_message: str,
+) -> None:
+    """Save conversation messages to the database.
+
+    Args:
+        conversation_id: The conversation identifier.
+        user_id: The user's ID.
+        user_message: The user's message text.
+        assistant_message: The assistant's response text.
+    """
+    async with async_session() as session:
+        # Get or create conversation
+        result = await session.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        conversation = result.scalar_one_or_none()
+
+        if conversation is None:
+            # Create a new conversation with a title from the first message
+            title = user_message[:80] + ("..." if len(user_message) > 80 else "")
+            conversation = Conversation(
+                id=conversation_id,
+                user_id=user_id,
+                title=title,
+            )
+            session.add(conversation)
+            await session.flush()
+
+        # Add user message
+        session.add(
+            Message(
+                conversation_id=conversation_id,
+                role="user",
+                content=user_message,
+            )
+        )
+
+        # Add assistant message
+        if assistant_message:
+            session.add(
+                Message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=assistant_message,
+                )
+            )
+
+        await session.commit()

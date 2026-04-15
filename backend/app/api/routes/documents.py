@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status

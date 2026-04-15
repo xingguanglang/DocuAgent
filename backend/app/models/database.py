@@ -10,7 +10,6 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.ext.asyncio import (
     AsyncAttrs,
     AsyncEngine,
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )

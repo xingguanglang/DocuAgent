@@ -39,7 +39,7 @@ class HybridRetriever:
         Returns:
             List of documents ranked by combined relevance.
         """
-        # Step 1: 向量检索，多取一些候选
+        # Step 1: vector search, fetch more candidates
         candidates = await self._vector_store.similarity_search(
             query, top_k=top_k * 3
         )
@@ -47,19 +47,19 @@ class HybridRetriever:
         if not candidates:
             return []
 
-        # Step 2: BM25 关键词排序
+        # Step 2: BM25 keyword scoring
         tokenized_corpus = [doc.page_content.lower().split() for doc in candidates]
         bm25 = BM25Okapi(tokenized_corpus)
         bm25_scores = bm25.get_scores(query.lower().split())
 
         # Step 3: reciprocal rank fusion (RRF)
-        # 向量排名：candidates 已按相似度排序，index 就是排名
-        k = 60  # RRF 常数
+        # Vector rank: candidates are sorted by similarity, index = rank
+        k = 60  # RRF constant
         fused_scores: list[tuple[int, float]] = []
 
-        for i, doc in enumerate(candidates):
+        for i, _doc in enumerate(candidates):
             vector_rank = i + 1
-            # BM25 排名：按 score 降序
+            # BM25 rank: sorted by score descending
             bm25_rank = sorted(
                 range(len(bm25_scores)),
                 key=lambda x: bm25_scores[x],
@@ -72,7 +72,7 @@ class HybridRetriever:
             )
             fused_scores.append((i, rrf_score))
 
-        # 按融合分数降序排列，取 top_k
+        # Sort by fused score descending, take top_k
         fused_scores.sort(key=lambda x: x[1], reverse=True)
 
         return [candidates[i] for i, _ in fused_scores[:top_k]]
