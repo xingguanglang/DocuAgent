@@ -6,7 +6,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-
 # --- Auth ---
 
 
@@ -23,7 +22,7 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
-    
+
 
 class LoginResponse(BaseModel):
     """Login response with JWT token."""
@@ -70,7 +69,7 @@ class Source(BaseModel):
     chunk_text: str
     relevance_score: float
     page_number: int | None = None
-    
+
 
 class ToolCallInfo(BaseModel):
     """Agent tool call metadata."""

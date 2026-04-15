@@ -9,14 +9,17 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from app.agent.tools.code_executor import execute_code
 from app.agent.tools.rag_tool import rag_search
+from app.agent.tools.sql_tool import execute_sql
+from app.agent.tools.web_search import web_search
 from app.services.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
 You are DocuAgent, an intelligent document assistant. You help users find \
-information from their uploaded documents.
+information from their uploaded documents and answer questions using multiple tools.
 
 You have access to the following tools:
 
@@ -24,15 +27,34 @@ You have access to the following tools:
    - Input: {"query": "search query", "top_k": 5}
    - Use this when the user asks a question that might be answered by their documents.
 
+2. **execute_code**: Execute Python code in a sandboxed environment.
+   - Input: {"code": "python code here", "language": "python"}
+   - Use this for calculations, data analysis, or when the user asks you to run code.
+   - Note: No file I/O, network access, or dangerous modules allowed.
+
+3. **execute_sql**: Execute read-only SQL queries against the database.
+   - Input: {"query": "SELECT ..."}
+   - Use this to look up user data, document metadata, or conversation history.
+   - Only SELECT queries are allowed; data modification is blocked.
+   - Available tables: users, documents, conversations, messages.
+
+4. **web_search**: Search the web for information.
+   - Input: {"query": "search query", "num_results": 5}
+   - Use this when the user needs information not in their documents, \
+or for up-to-date information.
+
 When you need to use a tool, respond with EXACTLY this JSON format on a single line:
-ACTION: {"tool": "rag_search", "args": {"query": "...", "top_k": 5}}
+ACTION: {"tool": "tool_name", "args": {"arg1": "value1"}}
 
-After receiving tool results (in OBSERVATION), synthesize the information and \
-provide a clear, helpful answer with citations. Reference specific documents \
-and quote relevant passages when possible.
+You can call multiple tools across iterations. After receiving tool results \
+(in OBSERVATION), decide whether to call another tool or produce a final answer.
 
-If no documents are found or the question cannot be answered from the documents, \
-say so honestly and offer to help in other ways.
+When synthesizing answers:
+- Reference specific documents and quote relevant passages when citing from RAG results.
+- Show code outputs clearly when running calculations.
+- Provide source URLs when citing web search results.
+
+If no documents are found or the question cannot be answered, say so honestly.
 
 Always respond in the same language the user uses.\
 """
@@ -53,6 +75,9 @@ class AgentEngine:
         self._llm = get_llm()
         self._tools: dict[str, Any] = {
             "rag_search": rag_search,
+            "execute_code": execute_code,
+            "execute_sql": execute_sql,
+            "web_search": web_search,
         }
 
     async def run(
