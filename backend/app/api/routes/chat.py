@@ -14,7 +14,13 @@ from app.agent.engine import AgentEngine
 from app.agent.memory import ConversationMemory
 from app.api.dependencies import get_current_user
 from app.models.database import Conversation, Message, async_session
-from app.models.schemas import ChatRequest
+from app.models.schemas import (
+    ChatHistoryResponse,
+    ChatMessage,
+    ChatRequest,
+    ConversationListResponse,
+    ConversationResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,3 +181,138 @@ async def _persist_messages(
             )
 
         await session.commit()
+
+
+@router.get("/conversations", response_model=ConversationListResponse)
+async def list_conversations(
+    user: Annotated[dict[str, str], Depends(get_current_user)],
+) -> ConversationListResponse:
+    """List all conversations for the current user.
+
+    Returns conversations ordered by most recent first.
+
+    Args:
+        user: Authenticated user from JWT token.
+
+    Returns:
+        List of conversation summaries.
+    """
+    async with async_session() as session:
+        result = await session.execute(
+            select(Conversation)
+            .where(Conversation.user_id == user["user_id"])
+            .order_by(Conversation.created_at.desc())
+        )
+        conversations = result.scalars().all()
+
+        return ConversationListResponse(
+            conversations=[
+                ConversationResponse(
+                    id=conv.id,
+                    title=conv.title,
+                    created_at=conv.created_at,
+                )
+                for conv in conversations
+            ],
+            total=len(conversations),
+        )
+
+
+@router.get("/conversations/{conversation_id}", response_model=ChatHistoryResponse)
+async def get_conversation_messages(
+    conversation_id: str,
+    user: Annotated[dict[str, str], Depends(get_current_user)],
+) -> ChatHistoryResponse:
+    """Get all messages for a specific conversation.
+
+    Args:
+        conversation_id: UUID of the conversation.
+        user: Authenticated user from JWT token.
+
+    Returns:
+        Conversation messages ordered chronologically.
+    """
+    from fastapi import HTTPException, status
+
+    async with async_session() as session:
+        # Verify the conversation belongs to this user
+        conv_result = await session.execute(
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.user_id == user["user_id"],
+            )
+        )
+        if not conv_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found",
+            )
+
+        result = await session.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.asc())
+        )
+        messages = result.scalars().all()
+
+        return ChatHistoryResponse(
+            conversation_id=conversation_id,
+            messages=[
+                ChatMessage(
+                    id=msg.id,
+                    role=msg.role,
+                    content=msg.content,
+                    sources=[],
+                    tool_calls=[],
+                    created_at=msg.created_at,
+                )
+                for msg in messages
+            ],
+        )
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    user: Annotated[dict[str, str], Depends(get_current_user)],
+) -> dict[str, str]:
+    """Delete a conversation and all its messages.
+
+    Args:
+        conversation_id: UUID of the conversation to delete.
+        user: Authenticated user from JWT token.
+
+    Returns:
+        Confirmation message.
+    """
+    from fastapi import HTTPException, status
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.user_id == user["user_id"],
+            )
+        )
+        conversation = result.scalar_one_or_none()
+
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found",
+            )
+
+        # Delete messages first (foreign key)
+        msg_result = await session.execute(
+            select(Message).where(Message.conversation_id == conversation_id)
+        )
+        for msg in msg_result.scalars().all():
+            await session.delete(msg)
+
+        await session.delete(conversation)
+        await session.commit()
+
+        # Clean up in-memory conversation cache
+        _memories.pop(conversation_id, None)
+
+        return {"message": "Conversation deleted successfully"}

@@ -26,7 +26,15 @@ export interface ChatMessage {
 
 /** SSE event from the chat endpoint */
 export interface SSEEvent {
-  event: "thought" | "action" | "observation" | "message" | "source" | "done" | "error";
+  event:
+    | "thought"
+    | "action"
+    | "observation"
+    | "message"
+    | "conversation_id"
+    | "source"
+    | "done"
+    | "error";
   data: string;
 }
 

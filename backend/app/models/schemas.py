@@ -86,6 +86,21 @@ class ChatHistoryResponse(BaseModel):
     messages: list[ChatMessage]
 
 
+class ConversationResponse(BaseModel):
+    """Conversation summary for listing."""
+
+    id: str
+    title: str
+    created_at: datetime
+
+
+class ConversationListResponse(BaseModel):
+    """List of conversations."""
+
+    conversations: list[ConversationResponse]
+    total: int
+
+
 # --- Documents ---
 
 

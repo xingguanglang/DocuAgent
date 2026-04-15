@@ -1,3 +1,5 @@
+import type { ChatMessage, Conversation, DocumentInfo } from "../types";
+
 const API_BASE = "/api/v1";
 
 /** Get stored auth token */
@@ -37,11 +39,16 @@ export async function register(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, name }),
   });
-  if (!res.ok) throw new Error("Registration failed");
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Registration failed");
+  }
 }
 
+// --- Documents ---
+
 /** Upload a document */
-export async function uploadDocument(file: File): Promise<unknown> {
+export async function uploadDocument(file: File): Promise<DocumentInfo> {
   const token = getToken();
   const formData = new FormData();
   formData.append("file", file);
@@ -50,12 +57,18 @@ export async function uploadDocument(file: File): Promise<unknown> {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
   });
-  if (!res.ok) throw new Error("Upload failed");
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Upload failed (${res.status})`);
+  }
   return res.json();
 }
 
 /** List user documents */
-export async function listDocuments(): Promise<unknown> {
+export async function listDocuments(): Promise<{
+  documents: DocumentInfo[];
+  total: number;
+}> {
   const res = await fetch(`${API_BASE}/documents`, {
     headers: authHeaders(),
   });
@@ -63,15 +76,38 @@ export async function listDocuments(): Promise<unknown> {
   return res.json();
 }
 
-/** Send a chat message and return the SSE response */
-export function sendChatMessage(
-  message: string,
-  conversationId?: string,
-): EventSource {
-  // We use a custom approach since EventSource doesn't support POST
-  // The actual implementation uses the useSSE hook
-  const url = new URL(`${API_BASE}/chat`, window.location.origin);
-  if (conversationId) url.searchParams.set("conversation_id", conversationId);
-  const es = new EventSource(url.toString());
-  return es;
+// --- Conversations ---
+
+/** List user conversations (most recent first) */
+export async function listConversations(): Promise<{
+  conversations: Conversation[];
+  total: number;
+}> {
+  const res = await fetch(`${API_BASE}/chat/conversations`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to fetch conversations");
+  return res.json();
+}
+
+/** Get messages for a conversation */
+export async function getConversationMessages(
+  conversationId: string,
+): Promise<{ conversation_id: string; messages: ChatMessage[] }> {
+  const res = await fetch(`${API_BASE}/chat/conversations/${conversationId}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to fetch conversation messages");
+  return res.json();
+}
+
+/** Delete a conversation */
+export async function deleteConversation(
+  conversationId: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/chat/conversations/${conversationId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to delete conversation");
 }
