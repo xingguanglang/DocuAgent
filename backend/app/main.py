@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,9 +16,16 @@ from app.config import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown events."""
-    # Startup
+    from app.models.database import Base, engine
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    os.makedirs(settings.upload_dir, exist_ok=True)
+
     yield
-    # Shutdown
+
+    await engine.dispose()
 
 
 app = FastAPI(
@@ -25,6 +33,7 @@ app = FastAPI(
     version="0.1.0",
     description="AI-powered document assistant with RAG and Agent capabilities",
     lifespan=lifespan,
+    swagger_ui_parameters={"tryItOutEnabled": False},
 )
 
 app.add_middleware(
